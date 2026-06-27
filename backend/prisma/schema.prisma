@@ -1,0 +1,668 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["public", "ticketing"]
+}
+
+model cities {
+  id              BigInt   @id(map: "pk_cities") @default(autoincrement())
+  country_code    String   @default("CO") @db.Char(2)
+  department_name String   @db.Citext
+  city_name       String   @db.Citext
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  venues          venues[]
+
+  @@unique([country_code, department_name, city_name], map: "uq_cities_country_department_city")
+  @@schema("ticketing")
+}
+
+model event_categories {
+  id           Int      @id(map: "pk_event_categories") @default(autoincrement()) @db.SmallInt
+  code         String   @unique(map: "uq_event_categories_code")
+  display_name String   @unique(map: "uq_event_categories_display_name")
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  events       events[]
+
+  @@schema("ticketing")
+}
+
+model event_ticket_types {
+  id                   String                 @id(map: "pk_event_ticket_types") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id             String                 @db.Uuid
+  venue_section_id     String?                @db.Uuid
+  ticket_type_name     String
+  description          String?
+  price_amount         Decimal                @db.Decimal(12, 2)
+  service_fee_amount   Decimal                @default(0) @db.Decimal(12, 2)
+  max_per_order        Int                    @default(6) @db.SmallInt
+  inventory_quantity   Int?
+  sales_start_at       DateTime?              @db.Timestamptz(6)
+  sales_end_at         DateTime?              @db.Timestamptz(6)
+  is_active            Boolean                @default(true)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?              @db.Timestamptz(6)
+  cart_items           cart_items[]
+  event_seat_inventory event_seat_inventory[]
+  events               events                 @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_event_ticket_types_event")
+  venue_sections       venue_sections?        @relation(fields: [venue_section_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_event_ticket_types_venue_section")
+  order_items          order_items[]
+
+  @@unique([event_id, ticket_type_name], map: "uq_event_ticket_types_event_name")
+  @@index([event_id], map: "idx_event_ticket_types_event_id")
+  @@index([venue_section_id], map: "idx_event_ticket_types_section_id")
+  @@schema("ticketing")
+}
+
+model events {
+  id                   String                 @id(map: "pk_events") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contract_address     String?                @unique
+  nft_contract_address String?                @unique
+  organizer_id         String                 @db.Uuid
+  category_id          Int                    @db.SmallInt
+  venue_id             String                 @db.Uuid
+  slug                 String                 @unique(map: "uq_events_slug")
+  title                String
+  description          String?
+  cover_image_url      String?
+  starts_at            DateTime               @db.Timestamptz(6)
+  ends_at              DateTime?              @db.Timestamptz(6)
+  sales_start_at       DateTime?              @db.Timestamptz(6)
+  sales_end_at         DateTime?              @db.Timestamptz(6)
+  has_assigned_seating Boolean                @default(false)
+  max_tickets_per_user Int                    @default(6) @db.SmallInt
+  status               event_status           @default(DRAFT)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?              @db.Timestamptz(6)
+  event_seat_inventory event_seat_inventory[]
+  event_resale_policies event_resale_policies?
+  event_ticket_types   event_ticket_types[]
+  pqr_claims           pqr_claims[]
+  event_categories     event_categories       @relation(fields: [category_id], references: [id], onUpdate: NoAction, map: "fk_events_category")
+  organizers           organizers             @relation(fields: [organizer_id], references: [id], onUpdate: NoAction, map: "fk_events_organizer")
+  venues               venues                 @relation(fields: [venue_id], references: [id], onUpdate: NoAction, map: "fk_events_venue")
+
+  @@index([category_id, status, starts_at], map: "idx_events_category_status_starts_at")
+  @@index([status, starts_at], map: "idx_events_status_starts_at")
+  @@index([organizer_id, starts_at], map: "idx_events_organizer_starts_at")
+  @@index([venue_id, starts_at], map: "idx_events_venue_starts_at")
+  @@schema("ticketing")
+}
+
+model event_resale_policies {
+  id                       String            @id(map: "pk_event_resale_policies") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id                 String            @unique(map: "uq_event_resale_policies_event_id") @db.Uuid
+  enabled                  Boolean           @default(true)
+  limit_type               resale_limit_type @default(PERCENTAGE)
+  max_price_amount         Decimal?          @db.Decimal(12, 2)
+  max_price_percent        Decimal?          @default(150) @db.Decimal(5, 2)
+  resale_starts_at         DateTime?         @db.Timestamptz(6)
+  resale_ends_at           DateTime?         @db.Timestamptz(6)
+  block_hours_before_event Int               @default(6) @db.SmallInt
+  platform_fee_percent     Decimal           @default(3) @db.Decimal(5, 2)
+  organizer_fee_percent    Decimal           @default(5) @db.Decimal(5, 2)
+  created_at               DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime          @default(now()) @db.Timestamptz(6)
+  events                   events            @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_event_resale_policies_event")
+
+  @@index([enabled], map: "idx_event_resale_policies_enabled")
+  @@schema("ticketing")
+}
+
+model organizers {
+  id             String    @id(map: "pk_organizers") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legal_name     String
+  tax_identifier String?   @unique(map: "uq_organizers_tax_identifier")
+  support_email  String?   @db.Citext
+  support_phone  String?
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime? @db.Timestamptz(6)
+  events         events[]
+
+  @@schema("ticketing")
+}
+
+model venues {
+  id             String           @id(map: "pk_venues") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  city_id        BigInt
+  address_line   String
+  venue_type     venue_type
+  time_zone      String           @default("America/Bogota")
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime         @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime?        @db.Timestamptz(6)
+  events         events[]
+  venue_sections venue_sections[]
+  cities         cities           @relation(fields: [city_id], references: [id], onUpdate: NoAction, map: "fk_venues_city")
+
+  @@index([city_id], map: "idx_venues_city_id")
+  @@schema("ticketing")
+}
+
+model users {
+  id                  String                @id(map: "pk_users") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  first_name          String
+  last_name           String
+  email               String                @unique(map: "uq_users_email") @db.Citext
+  password_hash       String
+  wallet_address      String?               @unique
+  document_type       document_type
+  document_number     String
+  phone               String?
+  role                user_role             @default(CUSTOMER)
+  is_active           Boolean               @default(true)
+  last_login_at       DateTime?             @db.Timestamptz(6)
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  deleted_at          DateTime?             @db.Timestamptz(6)
+  carts               carts[]
+  orders              orders[]
+  tickets             tickets[]
+  wallet_challenges   wallet_challenges[]
+  transaction_intents transaction_intents[]
+  checkins            checkins[]
+  pqr_claims          pqr_claims[]          @relation("pqr_claims_user")
+  assigned_pqr_claims pqr_claims[]          @relation("pqr_claims_assignee")
+  pqr_claim_messages  pqr_claim_messages[]
+
+  @@schema("ticketing")
+}
+
+model wallet_challenges {
+  id             String    @id(map: "pk_wallet_challenges") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String    @db.Uuid
+  wallet_address String
+  nonce          String    @unique(map: "uq_wallet_challenges_nonce")
+  message        String
+  expires_at     DateTime  @db.Timestamptz(6)
+  consumed_at    DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  users          users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_wallet_challenges_user")
+
+  @@index([user_id, wallet_address, consumed_at], map: "idx_wallet_challenges_user_wallet")
+  @@index([expires_at], map: "idx_wallet_challenges_expires_at")
+  @@schema("ticketing")
+}
+
+model tickets {
+  id               String        @id(map: "pk_tickets") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contract_address String?
+  order_item_id    String?       @db.Uuid
+  owner_user_id    String?       @db.Uuid
+  owner_wallet     String?
+  ticket_code      String?       @unique(map: "uq_tickets_ticket_code")
+  ticket_root_id   Int?
+  version          Int?
+  is_for_sale      Boolean       @default(false)
+  resale_price     BigInt?
+  asset_code       String?       @unique(map: "tickets_asset_code_key")
+  nft_token_id     Int?
+  qr_payload       String?
+  status           ticket_status @default(ACTIVE)
+  lifecycle_reason ticket_lifecycle_reason?
+  issued_at        DateTime      @default(now()) @db.Timestamptz(6)
+  used_at          DateTime?     @db.Timestamptz(6)
+  cancelled_at     DateTime?     @db.Timestamptz(6)
+  created_at       DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime      @default(now()) @db.Timestamptz(6)
+  order_items      order_items?  @relation(fields: [order_item_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_tickets_order_item")
+  users            users?        @relation(fields: [owner_user_id], references: [id], onUpdate: NoAction, map: "fk_tickets_owner_user")
+  checkins         checkins[]
+  pqr_claims       pqr_claims[]
+
+  @@unique([contract_address, ticket_root_id, version])
+  @@index([owner_user_id, status], map: "idx_tickets_owner_status")
+  @@index([contract_address, is_for_sale, status], map: "idx_tickets_marketplace_active")
+  @@index([contract_address, ticket_root_id, version(sort: Desc)], map: "idx_tickets_root_version_desc")
+  @@schema("ticketing")
+}
+
+model checkins {
+  id               String   @id(map: "pk_checkins") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  verifier_user_id String   @db.Uuid
+  ticket_id        String?  @db.Uuid
+  result           String
+  source           String   @default("db")
+  reason           String?
+  payload          Json?    @db.JsonB
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  users            users    @relation(fields: [verifier_user_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_checkins_verifier_user")
+  tickets          tickets? @relation(fields: [ticket_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_checkins_ticket")
+
+  @@index([verifier_user_id, created_at(sort: Desc)], map: "idx_checkins_verifier_created_at")
+  @@index([ticket_id, created_at(sort: Desc)], map: "idx_checkins_ticket_created_at")
+  @@index([result, created_at(sort: Desc)], map: "idx_checkins_result_created_at")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cart_items {
+  id                      String                @id(map: "pk_cart_items") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cart_id                 String                @db.Uuid
+  event_ticket_type_id    String?               @db.Uuid
+  event_seat_inventory_id String?               @db.Uuid
+  quantity                Int                   @default(1)
+  unit_price_amount       Decimal               @db.Decimal(12, 2)
+  service_fee_amount      Decimal               @default(0) @db.Decimal(12, 2)
+  line_total_amount       Decimal?              @db.Decimal(14, 2)
+  created_at              DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime              @default(now()) @db.Timestamptz(6)
+  carts                   carts                 @relation(fields: [cart_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_cart_items_cart")
+  event_seat_inventory    event_seat_inventory? @relation(fields: [event_seat_inventory_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_cart_items_event_seat_inventory")
+  event_ticket_types      event_ticket_types?   @relation(fields: [event_ticket_type_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_cart_items_ticket_type")
+
+  @@index([cart_id], map: "idx_cart_items_cart_id")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model carts {
+  id         String       @id(map: "pk_carts") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String       @db.Uuid
+  status     cart_status  @default(ACTIVE)
+  expires_at DateTime?    @db.Timestamptz(6)
+  created_at DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at DateTime     @default(now()) @db.Timestamptz(6)
+  cart_items cart_items[]
+  users      users        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_carts_user")
+  seat_holds seat_holds[]
+
+  @@index([user_id, status], map: "idx_carts_user_status")
+  @@schema("ticketing")
+}
+
+model event_seat_inventory {
+  id                   String                @id(map: "pk_event_seat_inventory") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id             String                @db.Uuid
+  seat_id              String                @db.Uuid
+  event_ticket_type_id String                @db.Uuid
+  status               seat_inventory_status @default(AVAILABLE)
+  created_at           DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime              @default(now()) @db.Timestamptz(6)
+  cart_items           cart_items[]
+  events               events                @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_event_seat_inventory_event")
+  seats                seats                 @relation(fields: [seat_id], references: [id], onUpdate: NoAction, map: "fk_event_seat_inventory_seat")
+  event_ticket_types   event_ticket_types    @relation(fields: [event_ticket_type_id], references: [id], onUpdate: NoAction, map: "fk_event_seat_inventory_ticket_type")
+  order_items          order_items[]
+  seat_holds           seat_holds[]
+
+  @@unique([event_id, seat_id], map: "uq_event_seat_inventory_event_seat")
+  @@index([event_id, status], map: "idx_event_seat_inventory_event_status")
+  @@index([event_ticket_type_id], map: "idx_event_seat_inventory_ticket_type")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_items {
+  id                      String                @id(map: "pk_order_items") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id                String                @db.Uuid
+  event_ticket_type_id    String?               @db.Uuid
+  event_seat_inventory_id String?               @db.Uuid
+  quantity                Int                   @default(1)
+  unit_price_amount       Decimal               @db.Decimal(12, 2)
+  service_fee_amount      Decimal               @default(0) @db.Decimal(12, 2)
+  line_total_amount       Decimal?              @db.Decimal(14, 2)
+  created_at              DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime              @default(now()) @db.Timestamptz(6)
+  event_seat_inventory    event_seat_inventory? @relation(fields: [event_seat_inventory_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_order_items_event_seat_inventory")
+  orders                  orders                @relation(fields: [order_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_order_items_order")
+  event_ticket_types      event_ticket_types?   @relation(fields: [event_ticket_type_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_order_items_ticket_type")
+  tickets                 tickets[]
+
+  @@index([order_id], map: "idx_order_items_order_id")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orders {
+  id                    String        @id(map: "pk_orders") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id               String        @db.Uuid
+  order_number          String        @unique(map: "uq_orders_order_number")
+  status                order_status  @default(PENDING_PAYMENT)
+  subtotal_amount       Decimal       @db.Decimal(12, 2)
+  service_fee_amount    Decimal       @default(0) @db.Decimal(12, 2)
+  total_amount          Decimal       @db.Decimal(12, 2)
+  buyer_email           String        @db.Citext
+  buyer_phone           String?
+  buyer_document_type   document_type
+  buyer_document_number String
+  expires_at            DateTime?     @db.Timestamptz(6)
+  created_at            DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime      @default(now()) @db.Timestamptz(6)
+  order_items           order_items[]
+  users                 users         @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "fk_orders_user")
+  payments              payments[]
+  pqr_claims            pqr_claims[]
+
+  @@index([user_id, created_at(sort: Desc)], map: "idx_orders_user_created_at")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payments {
+  id                 String         @id(map: "pk_payments") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id           String         @db.Uuid
+  payment_method     payment_method
+  status             payment_status @default(PENDING)
+  amount             Decimal        @db.Decimal(12, 2)
+  currency_code      String         @default("COP") @db.Char(3)
+  provider_reference String?
+  processed_at       DateTime?      @db.Timestamptz(6)
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime       @default(now()) @db.Timestamptz(6)
+  orders             orders         @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_payments_order")
+
+  @@index([order_id, created_at(sort: Desc)], map: "idx_payments_order_created_at")
+  @@schema("ticketing")
+}
+
+model pqr_claims {
+  id                  String               @id(map: "pk_pqr_claims") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id             String               @db.Uuid
+  assigned_to_user_id String?              @db.Uuid
+  ticket_id           String?              @db.Uuid
+  order_id            String?              @db.Uuid
+  event_id            String?              @db.Uuid
+  type                pqr_claim_type
+  status              pqr_claim_status     @default(OPEN)
+  subject             String
+  description         String
+  related_tx_hash     String?
+  evidence            Json                 @db.JsonB
+  decision_reason     String?
+  resolved_at         DateTime?            @db.Timestamptz(6)
+  created_at          DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime             @default(now()) @db.Timestamptz(6)
+  users               users                @relation("pqr_claims_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pqr_claims_user")
+  assignee            users?               @relation("pqr_claims_assignee", fields: [assigned_to_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_pqr_claims_assignee")
+  tickets             tickets?             @relation(fields: [ticket_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_pqr_claims_ticket")
+  orders              orders?              @relation(fields: [order_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_pqr_claims_order")
+  events              events?              @relation(fields: [event_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_pqr_claims_event")
+  messages            pqr_claim_messages[]
+
+  @@index([user_id, created_at(sort: Desc)], map: "idx_pqr_claims_user_created_at")
+  @@index([status, created_at(sort: Desc)], map: "idx_pqr_claims_status_created_at")
+  @@index([type, created_at(sort: Desc)], map: "idx_pqr_claims_type_created_at")
+  @@index([event_id, status], map: "idx_pqr_claims_event_status")
+  @@index([assigned_to_user_id, status], map: "idx_pqr_claims_assignee_status")
+  @@schema("ticketing")
+}
+
+model pqr_claim_messages {
+  id         String     @id(map: "pk_pqr_claim_messages") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  claim_id   String     @db.Uuid
+  author_id  String     @db.Uuid
+  message    String
+  status_from pqr_claim_status?
+  status_to   pqr_claim_status?
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  claims     pqr_claims @relation(fields: [claim_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pqr_claim_messages_claim")
+  users      users      @relation(fields: [author_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_pqr_claim_messages_author")
+
+  @@index([claim_id, created_at], map: "idx_pqr_claim_messages_claim_created_at")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model seat_holds {
+  id                      String               @id(map: "pk_seat_holds") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cart_id                 String               @db.Uuid
+  event_seat_inventory_id String               @db.Uuid
+  expires_at              DateTime             @db.Timestamptz(6)
+  status                  seat_hold_status     @default(ACTIVE)
+  created_at              DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime             @default(now()) @db.Timestamptz(6)
+  carts                   carts                @relation(fields: [cart_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_seat_holds_cart")
+  event_seat_inventory    event_seat_inventory @relation(fields: [event_seat_inventory_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_seat_holds_event_seat_inventory")
+
+  @@index([expires_at], map: "idx_seat_holds_expires_at")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model seats {
+  id                   String                 @id(map: "pk_seats") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venue_section_id     String                 @db.Uuid
+  row_label            String?
+  seat_number          Int?
+  seat_label           String
+  is_accessible        Boolean                @default(false)
+  is_active            Boolean                @default(true)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?              @db.Timestamptz(6)
+  event_seat_inventory event_seat_inventory[]
+  venue_sections       venue_sections         @relation(fields: [venue_section_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_seats_venue_section")
+
+  @@unique([venue_section_id, seat_label], map: "uq_seats_section_label")
+  @@unique([venue_section_id, row_label, seat_number], map: "uq_seats_section_row_number")
+  @@index([venue_section_id], map: "idx_seats_section_id")
+  @@schema("ticketing")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model venue_sections {
+  id                 String               @id(map: "pk_venue_sections") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venue_id           String               @db.Uuid
+  section_name       String
+  section_code       String
+  has_numbered_seats Boolean              @default(false)
+  capacity           Int
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  deleted_at         DateTime?            @db.Timestamptz(6)
+  event_ticket_types event_ticket_types[]
+  seats              seats[]
+  venues             venues               @relation(fields: [venue_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_venue_sections_venue")
+
+  @@unique([venue_id, section_code], map: "uq_venue_sections_venue_code")
+  @@unique([venue_id, section_name], map: "uq_venue_sections_venue_name")
+  @@index([venue_id], map: "idx_venue_sections_venue_id")
+  @@schema("ticketing")
+}
+
+enum document_type {
+  CC
+  CE
+  TI
+  PP
+
+  @@schema("ticketing")
+}
+
+enum event_status {
+  DRAFT
+  PUBLISHED
+  SOLD_OUT
+  CANCELLED
+  COMPLETED
+
+  @@schema("ticketing")
+}
+
+enum resale_limit_type {
+  FIXED_PRICE
+  PERCENTAGE
+
+  @@schema("ticketing")
+}
+
+enum pqr_claim_type {
+  TICKET_NOT_RECEIVED
+  INVALID_QR
+  DUPLICATE_OR_USED_TICKET
+  FAILED_TRANSACTION
+  INCORRECT_INFORMATION
+  REFUND_OR_REVIEW
+  OTHER
+
+  @@schema("ticketing")
+}
+
+enum pqr_claim_status {
+  OPEN
+  IN_REVIEW
+  WAITING_USER
+  RESOLVED
+  REJECTED
+  CANCELLED
+
+  @@schema("ticketing")
+}
+
+enum user_role {
+  CUSTOMER
+  ADMIN
+  STAFF
+
+  @@schema("ticketing")
+}
+
+enum cart_status {
+  ACTIVE
+  EXPIRED
+  ABANDONED
+  CONVERTED
+
+  @@schema("ticketing")
+}
+
+enum order_status {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+  EXPIRED
+  REFUNDED
+
+  @@schema("ticketing")
+}
+
+enum payment_method {
+  CARD
+  PSE
+  CASHPOINT
+
+  @@schema("ticketing")
+}
+
+enum payment_status {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+
+  @@schema("ticketing")
+}
+
+enum seat_hold_status {
+  ACTIVE
+  EXPIRED
+  RELEASED
+  CONSUMED
+
+  @@schema("ticketing")
+}
+
+enum seat_inventory_status {
+  AVAILABLE
+  HELD
+  SOLD
+  BLOCKED
+
+  @@schema("ticketing")
+}
+
+enum ticket_status {
+  ACTIVE
+  USED
+  CANCELLED
+  REFUNDED
+
+  @@schema("ticketing")
+}
+
+enum ticket_lifecycle_reason {
+  LISTED_FOR_RESALE
+  LISTING_CANCELLED
+  RESOLD_PREVIOUS_VERSION
+  PRIMARY_P2P_REPLACED
+  REDEEMED_DB_SCAN
+  REDEEMED_ONCHAIN
+  INVALIDATED_ONCHAIN
+  LEGACY_USED
+  LEGACY_CANCELLED
+  REFUNDED_PAYMENT
+
+  @@schema("ticketing")
+}
+
+enum venue_type {
+  ARENA
+  STADIUM
+  THEATER
+  CLUB
+  COLISEUM
+  CONVENTION_CENTER
+
+  @@schema("ticketing")
+}
+
+model indexer_state {
+  id          Int      @id @default(1)
+  last_ledger Int      @default(0)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("ticketing")
+}
+
+model onchain_events {
+  id               String   @id(map: "pk_onchain_events") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tx_hash          String
+  ledger           Int
+  contract_address String
+  event_name       String
+  ticket_root_id   Int
+  version          Int
+  payload          Json
+  processed_at     DateTime @default(now()) @db.Timestamptz(6)
+  status           String   @default("PROCESSING")
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([tx_hash, ledger, contract_address, event_name, ticket_root_id, version], map: "uq_onchain_events_idempotency")
+  @@index([contract_address, event_name, ticket_root_id, version], map: "idx_onchain_events_ticket")
+  @@index([tx_hash], map: "idx_onchain_events_tx_hash")
+  @@schema("ticketing")
+}
+
+model transaction_intents {
+  id               String    @id(map: "pk_transaction_intents") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String    @db.Uuid
+  wallet_address   String
+  operation        String
+  contract_address String
+  ticket_root_id   Int
+  expected_version Int?
+  expected_price   BigInt?
+  xdr_hash         String    @unique(map: "uq_transaction_intents_xdr_hash")
+  status           String    @default("PENDING")
+  expires_at       DateTime  @db.Timestamptz(6)
+  submitted_at     DateTime? @db.Timestamptz(6)
+  tx_hash          String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_transaction_intents_user")
+
+  @@index([user_id, status, expires_at], map: "idx_transaction_intents_user_status")
+  @@index([contract_address, ticket_root_id, operation], map: "idx_transaction_intents_ticket_operation")
+  @@schema("ticketing")
+}

@@ -1,0 +1,17 @@
+[package]
+name = "factory_contract"
+version = "0.1.0"
+edition = "2021"
+authors = ["Stellar Tickets <santiagoa.mesan@javeriana.edu.co>"]
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+event_contract = { path = "../event_contract" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+event_contract = { path = "../event_contract" }
