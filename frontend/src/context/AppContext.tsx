@@ -180,7 +180,7 @@ export interface OrderData {
   serviceFees: number;
   total: number;
   createdAt: string;
-  status: "confirmed" | "pending";
+  status: "confirmed" | "pending" | "cancelled";
 }
 
 /* ── Mock user ── */
@@ -210,7 +210,8 @@ interface AppState {
   removeFromCart: (id: string) => Promise<void>;
   updateCartQuantity: (id: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
-  checkout: (buyerInfo: { name: string; email: string; phone: string; document: string; paymentMethod: "CARD" | "PSE" | "CASHPOINT" }) => Promise<OrderData | null>;
+  checkout: (buyerInfo: { name: string; email: string; phone: string; document: string; paymentMethod: "CARD" | "PSE" | "CASHPOINT" }) => Promise<(OrderData & { interactiveUrl?: string; transactionId?: string }) | null>;
+  pollAnchorPayment: (transactionId: string) => Promise<"confirmed" | "pending" | "cancelled">;
   login: (email: string, password: string) => Promise<boolean>;
   register: (user: { name: string; email: string; phone: string; document: string; password: string }) => Promise<boolean>;
   logout: () => void;
@@ -450,7 +451,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       serviceFees: order.serviceFees ?? 0,
       total: order.total ?? 0,
       createdAt: order.createdAt ?? new Date().toISOString(),
-      status: order.status?.toLowerCase() === "pending" ? "pending" : "confirmed",
+      status: order.status?.toLowerCase() === "pending" ? "pending" : (order.status?.toLowerCase() === "cancelled" ? "cancelled" : "confirmed"),
     }),
     [mapTicketsResponse, user]
   );
@@ -566,7 +567,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             serviceFees: order.serviceFees ?? 0,
             total: order.total ?? 0,
             createdAt: order.createdAt ?? new Date().toISOString(),
-            status: order.status?.toLowerCase() === "pending" ? "pending" : "confirmed",
+            status: order.status?.toLowerCase() === "pending" ? "pending" : (order.status?.toLowerCase() === "cancelled" ? "cancelled" : "confirmed"),
           }))
         );
       } else {
@@ -677,7 +678,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         method: "POST",
         body: JSON.stringify({ buyerEmail: buyerInfo.email, buyerPhone: buyerInfo.phone }),
       });
-      const orderResponse = await apiFetch<OrderApiResponse & { paymentMode?: "SIMULATED"; idempotentReplay?: boolean }>("/api/checkout/confirm", {
+      const orderResponse = await apiFetch<OrderApiResponse & { paymentMode?: "SIMULATED" | "ANCHOR"; idempotentReplay?: boolean; interactiveUrl?: string; transactionId?: string }>("/api/checkout/confirm", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
@@ -691,6 +692,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setLastOrder(order);
       setCart([]);
 
+      // Anchor (async) path: payment happens off-site. Tickets/orders are refreshed
+      // later by pollAnchorPayment once the deposit completes.
+      if (orderResponse.interactiveUrl && orderResponse.transactionId) {
+        return { ...order, interactiveUrl: orderResponse.interactiveUrl, transactionId: orderResponse.transactionId };
+      }
+
       // Refresh real tickets and orders from API to get DB UUIDs
       const ordersData = await apiFetch<OrderApiResponse[]>("/api/orders");
       await refreshTickets();
@@ -700,6 +707,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return order;
     },
     [apiFetch, cart, mapOrderResponse, refreshTickets]
+  );
+
+  const pollAnchorPayment = useCallback(
+    async (transactionId: string): Promise<"confirmed" | "pending" | "cancelled"> => {
+      const resp = await apiFetch<OrderApiResponse>(`/api/checkout/anchor/${transactionId}`);
+      const status = resp.status?.toLowerCase();
+      if (status === "confirmed") {
+        const ordersData = await apiFetch<OrderApiResponse[]>("/api/orders");
+        await refreshTickets();
+        setOrders(ordersData.map((o) => mapOrderResponse(o)));
+        return "confirmed";
+      }
+      return status === "cancelled" ? "cancelled" : "pending";
+    },
+    [apiFetch, mapOrderResponse, refreshTickets]
   );
 
   const login = useCallback(
@@ -1141,6 +1163,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         updateCartQuantity,
         clearCart,
         checkout,
+        pollAnchorPayment,
         login,
         register,
         logout,

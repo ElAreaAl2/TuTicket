@@ -24,6 +24,7 @@ import { authorizeVerifiedNftTransfer } from './nftTransferPolicy';
 import { authorizeScannerRole, evaluateScanTicket, parseScanRequest } from './scannerPolicy';
 import { buildCheckinPayloadSummary, summarizeScanRequest, type CheckinResult } from './checkinPolicy';
 import { buildSimulatedOrderNumber, normalizeIdempotencyKey } from './checkoutPolicy';
+import { isAnchorConfigured, startDeposit as anchorStartDeposit, getStatus as anchorGetStatus, mapStatus as anchorMapStatus } from './anchor';
 import { deriveChainEventId, getTicketEventAvailabilityError, parseSorobanU32ReturnValue } from './secureTicketPolicy';
 import { createWalletChallenge, verifyWalletChallengeSignature } from './walletChallengePolicy';
 import { signTicketQr, QR_TOKEN_TTL_ROLLING_SECONDS } from './qrPolicy';
@@ -3969,6 +3970,10 @@ app.post('/api/checkout/confirm', authMiddleware, async (req, res) => {
       },
     }));
 
+    // Anchor (async) path creates the order without tickets; they are emitted
+    // when the deposit completes. See emitTicketsForOrder + the anchor endpoint.
+    const orderItemCreatesNoTickets = orderItemCreates.map(({ tickets, ...rest }) => rest);
+
     const seatInventoryIdsToSell = Array.from(new Set(cart.cart_items
       .map((i) => i.event_seat_inventory_id)
       .filter((v): v is string => Boolean(v))));
@@ -4033,6 +4038,48 @@ app.post('/api/checkout/confirm', authMiddleware, async (req, res) => {
         prisma.carts.update({ where: { id: cart.id }, data: { status: 'CONVERTED' } }),
       ]);
       order = createdOrder;
+    } else if (isAnchorConfigured() && organizerKeypair) {
+      // On/off-ramp via Anchor Platform (SEP-24): fiat -> Stellar asset settled
+      // into the custodial ORGANIZER account. Order stays PENDING_PAYMENT; tickets
+      // are emitted only when the deposit completes (GET /api/checkout/anchor/:id).
+      // ponytail: anchor path is general-admission only. Seat events with async
+      // payment need seat_holds extension — deferred until they're sold via anchor.
+      const { interactiveUrl, transactionId } = await anchorStartDeposit(organizerKeypair);
+      const [createdOrder] = await prisma.$transaction([
+        prisma.orders.create({
+          data: {
+            user_id: userId,
+            order_number: orderNumber,
+            status: 'PENDING_PAYMENT',
+            subtotal_amount: subtotal,
+            service_fee_amount: serviceFees,
+            total_amount: total,
+            buyer_email: buyerEmail || user.email,
+            buyer_phone: buyerPhone || user.phone,
+            buyer_document_type: user.document_type,
+            buyer_document_number: user.document_number,
+            order_items: { create: orderItemCreatesNoTickets },
+            payments: {
+              create: {
+                payment_method: paymentMethod || 'CARD',
+                status: 'PENDING',
+                amount: total,
+                provider_reference: `ANCHOR:${transactionId}`,
+              },
+            },
+          },
+        }),
+        prisma.carts.update({ where: { id: cart.id }, data: { status: 'CONVERTED' } }),
+      ]);
+      res.json({
+        ...formatCheckoutOrderResponse(createdOrder, false),
+        paymentMode: 'ANCHOR',
+        paymentStatus: 'PENDING',
+        interactiveUrl,
+        transactionId,
+        message: 'Completa el pago en la ventana del anchor para emitir tus boletos.',
+      });
+      return;
     } else {
       // General admission keeps the batch transaction path; no seat inventory
       // count must be checked here.
@@ -4096,6 +4143,77 @@ app.post('/api/checkout/confirm', authMiddleware, async (req, res) => {
   }
 });
 
+// Emit tickets for a paid order. Idempotent: skips order_items that already
+// have tickets, so the anchor poll can fire more than once safely.
+async function emitTicketsForOrder(orderId: string): Promise<void> {
+  const order = await prisma.orders.findUnique({
+    where: { id: orderId },
+    include: { order_items: { include: { tickets: true } } },
+  });
+  if (!order) return;
+  const codePart = order.order_number.slice(-5);
+  for (const item of order.order_items) {
+    if (item.tickets.length > 0) continue;
+    await prisma.tickets.createMany({
+      data: Array.from({ length: item.quantity }, (_unused, i) => ({
+        order_item_id: item.id,
+        owner_user_id: order.user_id,
+        ticket_code: `TK-${codePart}-${item.id.slice(-4).toUpperCase()}-${i + 1}`,
+        status: 'ACTIVE' as const,
+      })),
+    });
+  }
+}
+
+// GET /api/checkout/anchor/:transactionId — poll the SEP-24 deposit and, when it
+// completes, mark the order PAID and emit tickets. Called by the frontend while
+// the anchor's interactive window is open.
+app.get('/api/checkout/anchor/:transactionId', authMiddleware, async (req, res) => {
+  try {
+    if (!requireCustomerRole(req, res)) return;
+    if (!isAnchorConfigured() || !organizerKeypair) {
+      sendApiError(req, res, 503, 'ANCHOR_UNAVAILABLE', 'El anchor no está configurado');
+      return;
+    }
+    const userId = (req as any).userId;
+    const transactionId = String(req.params.transactionId);
+
+    const payment = await prisma.payments.findFirst({
+      where: { provider_reference: `ANCHOR:${transactionId}` },
+      include: { orders: true },
+    });
+    if (!payment?.orders || payment.orders.user_id !== userId) {
+      sendApiError(req, res, 404, 'NOT_FOUND', 'Orden no encontrada');
+      return;
+    }
+    const order = payment.orders;
+
+    // Already settled — return idempotently without re-querying the anchor.
+    if (order.status !== 'PAID' && order.status !== 'CANCELLED') {
+      const outcome = anchorMapStatus(await anchorGetStatus(organizerKeypair, transactionId));
+      const now = new Date();
+      if (outcome === 'PAID') {
+        await emitTicketsForOrder(order.id);
+        await prisma.$transaction([
+          prisma.orders.update({ where: { id: order.id }, data: { status: 'PAID' } }),
+          prisma.payments.update({ where: { id: payment.id }, data: { status: 'PAID', processed_at: now } }),
+        ]);
+      } else if (outcome === 'FAILED') {
+        await prisma.$transaction([
+          prisma.orders.update({ where: { id: order.id }, data: { status: 'CANCELLED' } }),
+          prisma.payments.update({ where: { id: payment.id }, data: { status: 'FAILED' } }),
+        ]);
+      }
+    }
+
+    const fullOrder = await prisma.orders.findUnique({ where: { id: order.id }, include: orderIncludes });
+    res.json(formatCheckoutOrderResponse(fullOrder ?? order, false));
+  } catch (error) {
+    console.error('[CHECKOUT] Anchor poll error:', error);
+    sendApiError(req, res, 502, 'ANCHOR_ERROR', 'No se pudo consultar el estado del pago');
+  }
+});
+
 function formatCheckoutOrderResponse(order: {
   id: string;
   order_number: string;
@@ -4122,7 +4240,7 @@ function formatCheckoutOrderResponse(order: {
     serviceFees: Number(order.service_fee_amount),
     total: Number(order.total_amount),
     createdAt: order.created_at?.toISOString?.() ?? new Date().toISOString(),
-    status: order.status === 'PENDING_PAYMENT' ? 'pending' : 'confirmed',
+    status: order.status === 'PENDING_PAYMENT' ? 'pending' : (order.status === 'PAID' ? 'confirmed' : 'cancelled'),
     items: (order.order_items ?? []).flatMap((item: any) => toOrderItemTicketDtos(item)),
     paymentMode: 'SIMULATED',
     paymentStatus: 'SIMULATED_PAID',

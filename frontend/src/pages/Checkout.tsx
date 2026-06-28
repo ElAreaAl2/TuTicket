@@ -16,7 +16,7 @@ const Field = ({ label, name, type = "text", placeholder = "", value, onChange, 
 );
 
 const Checkout = () => {
-  const { cart, checkout, isLoggedIn, authStatus, user } = useAppContext();
+  const { cart, checkout, pollAnchorPayment, isLoggedIn, authStatus, user } = useAppContext();
   const location = useLocation();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ name: "", email: "", phone: "", document: "", docType: "CC", payMethod: "card", terms: false });
@@ -97,8 +97,26 @@ const Checkout = () => {
           document: `${form.docType} ${form.document}`,
           paymentMethod: paymentMap[form.payMethod] ?? "CARD",
         });
-        setCompletedOrderId(order?.id ?? null);
-        setStep(3);
+        // Anchor (on/off-ramp) path: pay fiat in the hosted window, then poll until settled.
+        if (order?.interactiveUrl && order.transactionId) {
+          window.open(order.interactiveUrl, "anchor_payment", "width=480,height=720");
+          let result: "confirmed" | "pending" | "cancelled" = "pending";
+          for (let i = 0; i < 100 && result === "pending"; i++) {
+            await new Promise((r) => setTimeout(r, 3000));
+            result = await pollAnchorPayment(order.transactionId);
+          }
+          if (result === "confirmed") {
+            setCompletedOrderId(order.id);
+            setStep(3);
+          } else if (result === "cancelled") {
+            setSubmitError("El pago fue rechazado o cancelado. Inténtalo de nuevo.");
+          } else {
+            setSubmitError("El pago sigue pendiente. Completa el pago en la ventana del anchor.");
+          }
+        } else {
+          setCompletedOrderId(order?.id ?? null);
+          setStep(3);
+        }
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : "No se pudo confirmar la compra");
       } finally {
