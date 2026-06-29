@@ -211,7 +211,7 @@ interface AppState {
   updateCartQuantity: (id: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
   checkout: (buyerInfo: { name: string; email: string; phone: string; document: string; paymentMethod: "CARD" | "PSE" | "CASHPOINT" }) => Promise<(OrderData & { interactiveUrl?: string; transactionId?: string }) | null>;
-  pollAnchorPayment: (transactionId: string) => Promise<"confirmed" | "pending" | "cancelled">;
+  pollAnchorPayment: (transactionId: string) => Promise<{ status: "confirmed" | "pending" | "cancelled"; stellarTransactionId?: string }>;
   login: (email: string, password: string) => Promise<boolean>;
   register: (user: { name: string; email: string; phone: string; document: string; password: string }) => Promise<boolean>;
   logout: () => void;
@@ -710,16 +710,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const pollAnchorPayment = useCallback(
-    async (transactionId: string): Promise<"confirmed" | "pending" | "cancelled"> => {
-      const resp = await apiFetch<OrderApiResponse>(`/api/checkout/anchor/${transactionId}`);
+    async (transactionId: string): Promise<{ status: "confirmed" | "pending" | "cancelled"; stellarTransactionId?: string }> => {
+      const resp = await apiFetch<OrderApiResponse & { stellarTransactionId?: string }>(`/api/checkout/anchor/${transactionId}`);
       const status = resp.status?.toLowerCase();
       if (status === "confirmed") {
         const ordersData = await apiFetch<OrderApiResponse[]>("/api/orders");
         await refreshTickets();
         setOrders(ordersData.map((o) => mapOrderResponse(o)));
-        return "confirmed";
+        return { status: "confirmed", stellarTransactionId: resp.stellarTransactionId };
       }
-      return status === "cancelled" ? "cancelled" : "pending";
+      return { status: status === "cancelled" ? "cancelled" : "pending", stellarTransactionId: resp.stellarTransactionId };
     },
     [apiFetch, mapOrderResponse, refreshTickets]
   );

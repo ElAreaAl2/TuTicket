@@ -4188,9 +4188,16 @@ app.get('/api/checkout/anchor/:transactionId', authMiddleware, async (req, res) 
     }
     const order = payment.orders;
 
+    // ponytail: stellarTransactionId is returned in this response (when the deposit
+    // settles) but not persisted — the success screen needs it right after purchase.
+    // Persist on payment.provider_reference if order history must show it later.
+    let stellarTransactionId: string | undefined;
+
     // Already settled — return idempotently without re-querying the anchor.
     if (order.status !== 'PAID' && order.status !== 'CANCELLED') {
-      const outcome = anchorMapStatus(await anchorGetStatus(organizerKeypair, transactionId));
+      const { status: rawStatus, stellarTransactionId: hash } = await anchorGetStatus(organizerKeypair, transactionId);
+      stellarTransactionId = hash;
+      const outcome = anchorMapStatus(rawStatus);
       const now = new Date();
       if (outcome === 'PAID') {
         await emitTicketsForOrder(order.id);
@@ -4207,7 +4214,7 @@ app.get('/api/checkout/anchor/:transactionId', authMiddleware, async (req, res) 
     }
 
     const fullOrder = await prisma.orders.findUnique({ where: { id: order.id }, include: orderIncludes });
-    res.json(formatCheckoutOrderResponse(fullOrder ?? order, false));
+    res.json({ ...formatCheckoutOrderResponse(fullOrder ?? order, false), stellarTransactionId });
   } catch (error) {
     console.error('[CHECKOUT] Anchor poll error:', error);
     sendApiError(req, res, 502, 'ANCHOR_ERROR', 'No se pudo consultar el estado del pago');

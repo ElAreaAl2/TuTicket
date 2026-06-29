@@ -67,7 +67,10 @@ export async function startDeposit(
   return { interactiveUrl: data.url, transactionId: data.id };
 }
 
-export async function getStatus(keypair: Keypair, transactionId: string): Promise<string> {
+export async function getStatus(
+  keypair: Keypair,
+  transactionId: string,
+): Promise<{ status: string; stellarTransactionId?: string }> {
   const { sep24 } = cfg();
   const token = await getToken(keypair);
   const res = await fetch(`${sep24}/transaction?id=${encodeURIComponent(transactionId)}`, {
@@ -75,7 +78,8 @@ export async function getStatus(keypair: Keypair, transactionId: string): Promis
   });
   if (!res.ok) throw new Error(`SEP-24 status failed: ${res.status}`);
   const data = await res.json();
-  return data.transaction?.status ?? 'unknown';
+  const tx = data.transaction;
+  return { status: tx?.status ?? 'unknown', stellarTransactionId: tx?.stellar_transaction_id || undefined };
 }
 
 // Map a SEP-24 transaction status to our order outcome.
