@@ -68,10 +68,10 @@ describe("Checkout page", () => {
 
     await fillBuyerStep();
     fireEvent.click(screen.getByLabelText(/Acepto los/i));
-    fireEvent.click(screen.getByRole("button", { name: /Confirmar compra simulada/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continuar al pago seguro/i }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("La reserva de uno o más asientos expiró"));
-    expect(screen.queryByText("Compra Simulada Exitosa")).not.toBeInTheDocument();
+    expect(screen.queryByText("¡Compra Exitosa!")).not.toBeInTheDocument();
     expect(checkout).toHaveBeenCalledTimes(1);
   });
 
@@ -84,11 +84,11 @@ describe("Checkout page", () => {
 
     await fillBuyerStep();
     fireEvent.click(screen.getByLabelText(/Acepto los/i));
-    fireEvent.click(screen.getByRole("button", { name: /Confirmar compra simulada/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continuar al pago seguro/i }));
 
-    const pendingButton = await screen.findByRole("button", { name: /Confirmando/i });
+    const pendingButton = await screen.findByRole("button", { name: /Procesando pago seguro/i });
     expect(pendingButton).toBeDisabled();
     resolveCheckout({ id: "order-1" });
-    await waitFor(() => expect(screen.getByText("Compra Simulada Exitosa")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("¡Compra Exitosa!")).toBeInTheDocument());
   });
 });
