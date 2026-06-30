@@ -35,8 +35,8 @@ Traditional tickets are just images: easy to screenshot, forge, resell 10×, or 
 
 1. **Browse & buy** events like on any ticketing site. Add to cart, check out, pay with a card.
 2. **Get your ticket** instantly with a signed QR — ready to scan at the door.
-3. **(Optional) Secure it on-chain.** One click writes your ticket to the Stellar blockchain; if it's a collectible event, you also get an NFT.
-4. **(Optional) Resell it safely.** List within the organizer's rules. The buyer pays, ownership moves on-chain, your old QR dies, theirs comes alive.
+3. **Secure it on-chain.** One click writes your ticket to the Stellar blockchain; if it's a collectible event, you also get an NFT.
+4. **Resell it safely.** List within the organizer's rules. The buyer pays, ownership moves on-chain, your old QR dies, theirs comes alive.
 5. **Walk in.** Staff scans the QR; the system validates the signature + version and records the check-in, blocking any reuse.
 
 The magic: steps 1–2 require **no wallet at all**. Steps 3–5 light up the blockchain for whoever wants it.
