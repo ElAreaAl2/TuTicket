@@ -189,17 +189,6 @@ BASE_URL=http://localhost:3000 ./load-tests/run-load-suite.sh   # k6 load
 
 ---
 
-## ⚠️ Prototype scope (honest limitations)
-
-This is an academic prototype, not a commercial product:
-
-- Without an anchor configured, checkout uses **simulated payment**.
-- Door validation is **DB-first**; on-chain redemption exists in the contract + indexer but doesn't block the operational scanner.
-- Automated E2E tests don't sign with a real Freighter nor send end-to-end Soroban transactions.
-- Testnet execution depends on funded accounts and public RPC availability.
-
----
-
 ## 📚 Documentation
 
 - `docs/architecture/ARCHITECTURE.md`
