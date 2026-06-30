@@ -195,7 +195,7 @@ BASE_URL=http://localhost:3000 ./load-tests/run-load-suite.sh   # k6 load
 - `docs/architecture/CONTRACTS_TECHNICAL_REFERENCE.md`
 - `docs/operations/RUNTIME_DEPLOYMENT.md`
 - `docs/operations/TESTING_LIMITATIONS.md`
-- `backend/README.md` · `contracts/README.md` · `CLAUDE.md` (agent/dev guide)
+- `backend/README.md` · `contracts/README.md`
 
 ---
 
