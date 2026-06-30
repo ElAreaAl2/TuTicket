@@ -16,7 +16,7 @@ Traditional tickets are just images: easy to screenshot, forge, resell 10×, or 
 
 | If you are… | Read this |
 | --- | --- |
-| 🙋 **Non-technical / evaluator** | The pitch above + [How it feels to a user](#-how-it-feels-to-a-user) + [What makes it special](#-what-makes-it-special) |
+| 🙋 **Non-technical** | The pitch above + [How it feels to a user](#-how-it-feels-to-a-user) + [What makes it special](#-what-makes-it-special) |
 | 🧑‍💻 **Blockchain / backend expert** | [Architecture](#-architecture) + [On-chain ticket lifecycle](#-on-chain-ticket-lifecycle) + [Anchor integration](#-fiat-onofframp-via-stellar-anchor-sep-10--sep-24) |
 
 ---
