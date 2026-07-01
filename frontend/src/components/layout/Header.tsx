@@ -25,10 +25,7 @@ export const Header = () => {
     <header className="sticky top-0 z-50 bg-primary shadow-lg">
       <div className="max-w-7xl mx-auto flex items-center justify-between px-4 h-16">
         <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-            <span className="text-accent-foreground font-black text-sm">TT</span>
-          </div>
-          <span className="text-primary-foreground font-black text-xl tracking-tight hidden sm:block">TuTicket</span>
+          <img src="/logo.svg" alt="SecureTicket" className="h-8 w-auto" />
         </Link>
         <nav className="hidden lg:flex items-center gap-1">
           {navItems.map((item) => (

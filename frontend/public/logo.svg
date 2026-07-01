@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 72" width="400" height="72" font-family="&#39;Plus Jakarta Sans&#39;, system-ui, sans-serif">
+  <g transform="translate(2,4) scale(1.03)">
+    <mask id="mc" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+    <rect x="2" y="2" width="60" height="60" rx="16" fill="#fff"></rect>
+    <circle cx="2" cy="32" r="7" fill="#000"></circle>
+    <circle cx="62" cy="32" r="7" fill="#000"></circle>
+    <line x1="19" y1="19" x2="45" y2="45" stroke="#000" stroke-width="3.6" stroke-linecap="round"></line>
+    <rect x="13" y="13" width="12" height="12" rx="3.5" fill="#000"></rect>
+    <rect x="39" y="39" width="12" height="12" rx="3.5" fill="#000"></rect>
+  </mask>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="#FFFFFF" mask="url(#mc)"></rect>
+  <rect x="26" y="26" width="12" height="12" rx="3.5" fill="#FFB800"></rect>
+  </g>
+  <text x="90" y="50" font-size="46" font-weight="800" letter-spacing="-1.4" fill="#FFFFFF">SecureTicket</text>
+</svg>
